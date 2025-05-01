@@ -1,105 +1,158 @@
-import React, { useState } from "react";
-import usePaginatedUsers from "./usePaginatedUsers"; // Assuming custom hook is created
+import React, { useRef, useState, useCallback , useEffect } from 'react';
+import {
+  useReactTable,
+  getCoreRowModel,
+  flexRender,
+  createColumnHelper,
+} from '@tanstack/react-table';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import usePaginatedUsers from './usePaginatedUsers';
+import { debounce } from './utils/Debounce';
+
+const columnHelper = createColumnHelper();
+
+const columns = [
+  columnHelper.accessor('name', {
+    header: 'Name',
+    cell: info => info.getValue(),
+  }),
+  columnHelper.accessor('email', {
+    header: 'Email',
+    cell: info => info.getValue(),
+  }),
+  columnHelper.accessor('phone', {
+    header: 'Phone',
+    cell: info => info.getValue(),
+  }),
+  columnHelper.accessor(row => `${row.company.name} (${row.address.city})`, {
+    id: 'companyCity',
+    header: 'Company (City)',
+    cell: info => info.getValue(),
+  }),
+];
 
 const App = () => {
-    const [search, setSearch] = useState("");
-    const [page, setPage] = useState(1);
-    const { users, total, loading, error } = usePaginatedUsers(page, 50, search);
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const limit = 1000;
 
-    const handleSearchChange = (event) => {
-        setSearch(event.target.value);
-        setPage(1); // Reset page to 1 when search changes
-    };
+  const { users, loading, error } = usePaginatedUsers(page, limit, search);
 
-    const handleScroll = (e) => {
-        if (e.target.scrollTop + e.target.clientHeight === e.target.scrollHeight) {
-            setPage(prev => prev + 1);
-        }
-    };
+  const table = useReactTable({
+    data: users,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+  });
 
-    return (
-        <div className="container mx-auto p-6">
-            {/* Header */}
-            <header className="text-center mb-6">
-                <h1 className="text-3xl font-bold">User List</h1>
-            </header>
+  const parentRef = useRef(null);
 
-            {/* Search Bar */}
-            <div className="mb-6">
-                <input
-                    type="text"
-                    placeholder="Search by Name or Email"
-                    className="border p-2 rounded w-full"
-                    value={search}
-                    onChange={handleSearchChange}
-                />
-            </div>
+  const rowVirtualizer = useVirtualizer({
+    count: table.getRowModel().rows.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 48,
+    overscan: 10,
+  });
 
-            {/* User Table */}
-            <div className="overflow-x-auto">
-                <table className="table-auto w-full border-collapse">
-                    <thead className="bg-gray-200">
-                        <tr>
-                            <th className="px-4 py-2 text-left">Name</th>
-                            <th className="px-4 py-2 text-left">Email</th>
-                            <th className="px-4 py-2 text-left">Phone</th>
-                            <th className="px-4 py-2 text-left">Company (City)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {loading && (
-                            <tr>
-                                <td colSpan="4" className="text-center py-4">Loading...</td>
-                            </tr>
-                        )}
-                        {error && (
-                            <tr>
-                                <td colSpan="4" className="text-center py-4 text-red-600">{error}</td>
-                            </tr>
-                        )}
-                        {users.length === 0 && !loading && (
-                            <tr>
-                                <td colSpan="4" className="text-center py-4">No users found</td>
-                            </tr>
-                        )}
-                        {users.map(user => (
-                            <tr key={user.id}>
-                                <td className="px-4 py-2">{user.name}</td>
-                                <td className="px-4 py-2">{user.email}</td>
-                                <td className="px-4 py-2">{user.phone}</td>
-                                <td className="px-4 py-2">{user.company.name} ({user.address.city})</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
+  // Infinite scroll trigger
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const lastItem = virtualRows[virtualRows.length - 1];
+  const reachedEnd = lastItem?.index >= users.length - 1;
 
-            {/* Pagination or Infinite Scroll */}
-            <div className="my-4 flex justify-between">
-                {loading && (
-                    <div className="text-center w-full">
-                        <span>Loading more...</span>
-                    </div>
-                )}
+  useEffect(() => {
+    if (reachedEnd && !loading) {
+      setPage(prev => prev + 1);
+    }
+  }, [reachedEnd, loading]);
 
-                {!loading && !error && users.length < total && (
-                    <button
-                        onClick={() => setPage(prev => prev + 1)}
-                        className="border px-4 py-2 rounded bg-blue-500 text-white"
-                    >
-                        Load More
-                    </button>
-                )}
-            </div>
+  const handleSearchChange = useCallback(
+    debounce((val) => {
+      setPage(1);
+      setSearch(val);
+    }, 500),
+    []
+  );
 
-            {/* Error Message */}
-            {error && (
-                <div className="text-center text-red-600 mt-4">
-                    <span>An error occurred. Please try again.</span>
-                </div>
-            )}
-        </div>
-    );
+  return (
+    <div className="container mx-auto p-6">
+  <header className="text-center mb-6">
+    <h1 className="text-3xl font-bold text-indigo-500">User List</h1>
+  </header>
+
+  <div className="mb-6">
+    <input
+      type="text"
+      placeholder="Search by Name or Email"
+      className="border border-slate-300 focus:border-indigo-500 focus:ring-indigo-500 p-2 rounded w-full shadow-sm"
+      onChange={(e) => handleSearchChange(e.target.value)}
+    />
+  </div>
+
+  <div className="border rounded">
+    <table className="table-fixed w-full border-collapse">
+      <thead className="bg-indigo-100 sticky top-0 z-10 text-indigo-800">
+        {table.getHeaderGroups().map(headerGroup => (
+          <tr key={headerGroup.id}>
+            {headerGroup.headers.map(header => (
+              <th
+                key={header.id}
+                className="px-4 py-2 text-left text-sm font-semibold tracking-wide border-b border-indigo-300 bg-indigo-50"
+                style={{ width: `${100 / columns.length}%` }}
+              >
+                {flexRender(header.column.columnDef.header, header.getContext())}
+              </th>
+            ))}
+          </tr>
+        ))}
+      </thead>
+    </table>
+
+    <div
+      ref={parentRef}
+      className="overflow-auto bg-white border border-slate-300 rounded shadow-sm"
+      style={{ height: '400px' }}
+    >
+      <table className="table-fixed w-full border-collapse">
+        <tbody
+          style={{
+            height: `${rowVirtualizer.getTotalSize()}px`,
+            position: 'relative',
+          }}
+        >
+          {virtualRows.map(virtualRow => {
+            const row = table.getRowModel().rows[virtualRow.index];
+            return (
+              <tr
+                key={row.id}
+                className=''
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  transform: `translateY(${virtualRow.start}px)`,
+                  width: '100%',
+                  display: 'table',
+                  tableLayout: 'fixed',
+                }}
+              >
+                {row.getVisibleCells().map(cell => (
+                  <td
+                    key={cell.id}
+                    className="px-4 py-2 text-sm text-slate-800 truncate whitespace-nowrap overflow-hidden border-b border-slate-200"
+                    style={{ width: `${100 / columns.length}%` }}
+                    title={String(cell.getValue() ?? '')}
+                  >
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+  );
 };
 
 export default App;

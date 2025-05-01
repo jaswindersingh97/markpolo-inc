@@ -1,30 +1,33 @@
 import { useState, useEffect, useCallback } from "react";
+import axios from "axios";
 
 const usePaginatedUsers = (page, limit, search) => {
-    const [users, setUsers] = useState([]);
-    const [total, setTotal] = useState(0);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-    const fetchUsers = useCallback(async () => {
-        setLoading(true);
-        try {
-            const response = await fetch(`http://localhost:3000/api/users?page=${page}&limit=${limit}&search=${search}`);
-            const data = await response.json();
-            setUsers(data.data);
-            setTotal(data.total);
-        } catch (error) {
-            setError("Error fetching users.");
-        } finally {
-            setLoading(false);
-        }
-    }, [page, limit, search]);
+  const fetchUsers = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await axios.get(`${import.meta.env.VITE_API_URL}/api/users`, {
+        params: { page, limit, search },
+      });
+      setUsers(prev => (page === 1 ? data.data : [...prev, ...data.data]));
+      setTotal(data.total);
+    } catch {
+      setError("Error fetching users.");
+    } finally {
+      setLoading(false);
+    }
+  }, [page, limit, search]);
+  
+  useEffect(() => {
+    if (users.length >= total && page !== 1) return;
+    fetchUsers();
+  }, [fetchUsers]);
 
-    useEffect(() => {
-        fetchUsers();
-    }, [fetchUsers]);
-
-    return { users, total, loading, error };
+  return { users, total, loading, error };
 };
 
-export default usePaginatedUsers
+export default usePaginatedUsers;
